@@ -78,8 +78,40 @@ def fmt_time(dtime):
     else:
         return '%d:%02d:%02d.%03d' % (int(dtime / 3600), int((dtime % 3600) / 60), int(dtime) % 60,
                                       int(dtime * 1000) % 1000)
+def get_session():
+	cfg = tf.ConfigProto()
+	cfg.gpu_options.allow_growth = True
+	sess = tf.Session(config=cfg)
 
+	net = FasterRCNNSlim()
+	saver = tf.train.Saver()
 
+	saver.restore(sess, "model/res101_faster_rcnn_iter_60000.ckpt")
+	return (sess, net)
+	
+def detect_face(sess, net, file):
+	nms_type = NMSType.CPU_NMS
+	nms = NMSWrapper(nms_type)
+	
+	result = []
+	img = cv2.imread(file)
+	scores, boxes = detect(sess, net, img)
+	boxes = boxes[:, 4:8]
+	scores = scores[:, 1]
+	keep = nms(np.hstack([boxes, scores[:, np.newaxis]]).astype(np.float32), 0.3)
+	boxes = boxes[keep, :]
+	scores = scores[keep]
+	inds = np.where(scores >= 0.3)[0]
+	scores = scores[inds]
+	boxes = boxes[inds, :]
+	for i in range(scores.shape[0]):
+		x1, y1, x2, y2 = boxes[i, :].tolist()
+		new_result = {'score': float(scores[i]),
+					  'bbox': [x1, y1, x2, y2]}
+		result.append(new_result)
+
+	return json.dumps(result)
+	
 def main():
     parser = argparse.ArgumentParser(description='Anime face detector demo')
     parser.add_argument('-i', help='The input path of an image or directory', required=True, dest='input', type=str)
